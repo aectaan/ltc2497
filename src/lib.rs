@@ -1,3 +1,8 @@
+use embedded_hal::blocking::{
+    delay::DelayMs,
+    i2c::{Read, Write, WriteRead},
+};
+
 pub enum Error<E> {
     I2c(E),
     Overvoltage,
@@ -5,6 +10,7 @@ pub enum Error<E> {
     NotReady,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum Channel {
     LastSelected = 0b00000000,
     DiffCh0Ch1 = 0b10100000,
@@ -41,6 +47,13 @@ pub enum Channel {
     SingleEndedCh15 = 0b10111111,
 }
 
+impl Default for Channel {
+    fn default() -> Self {
+        Self::DiffCh0Ch1
+    }
+}
+
+#[derive(Debug)]
 pub enum AddressPinState {
     Low,
     High,
@@ -48,11 +61,10 @@ pub enum AddressPinState {
 }
 
 fn address_from_pins(ca2: AddressPinState, ca1: AddressPinState, ca0: AddressPinState) -> u8 {
-    let pins = (ca2, ca1, ca0);
     use AddressPinState::Floating as F;
     use AddressPinState::High as H;
     use AddressPinState::Low as L;
-    match pins {
+    match (ca2, ca1, ca0) {
         (L, L, L) => 0b0010100,
         (L, L, H) => 0b0010110,
         (L, L, F) => 0b0010101,
@@ -81,4 +93,76 @@ fn address_from_pins(ca2: AddressPinState, ca1: AddressPinState, ca0: AddressPin
         (F, F, H) => 0b1000110,
         (F, F, F) => 0b1000101,
     }
+}
+
+#[derive(Debug, Default)]
+pub struct LTC2497<I2C, D> {
+    i2c: I2C,
+    address: u8,
+    delay: D,
+    channel: Channel,
+    vref: f32,
+}
+
+impl<I2C, D, E> LTC2497<I2C, D>
+where
+    I2C: Read<Error = E> + Write<Error = E> + WriteRead<Error = E>,
+    D: DelayMs<u8>,
+{
+    pub fn new(i2c: I2C, address: u8, delay: D, vref_p: f32, vref_n: f32) -> Self {
+        assert!(vref_p - vref_n >= 0.1);
+        LTC2497 {
+            i2c,
+            address,
+            delay,
+            channel: Channel::default(),
+            vref: vref_p - vref_n,
+        }
+    }
+
+    pub fn new_from_pins(
+        i2c: I2C,
+        ca2: AddressPinState,
+        ca1: AddressPinState,
+        ca0: AddressPinState,
+        delay: D,
+        vref_p: f32,
+        vref_n: f32,
+    ) -> Self {
+        let address = address_from_pins(ca2, ca1, ca0);
+        Self::new(i2c, address, delay, vref_p, vref_n)
+    }
+
+    pub fn set_channel(&mut self, channel: Channel) -> Result<(), E> {
+        self.channel = channel;
+
+        self.i2c.write(self.address, &[channel as u8])
+    }
+
+    pub fn channel(&self) -> Channel {
+        self.channel
+    }
+
+    pub fn read(&mut self) -> Result<f32, Error<E>> {
+        let mut buf = [0; 3];
+        self.i2c.read(self.address, &mut buf).map_err(Error::I2c)?;
+        let sign;
+        match (buf[0] & 0b11000000) >> 6 {
+            0b00 => return Err(Error::Undervoltage),
+            0b01 => sign = -0.5,
+            0b10 => sign = 0.5,
+            0b11 => return Err(Error::Overvoltage),
+            _ => unreachable!(),
+        }
+
+        let raw = (((buf[2] & 0b00111111) as u16) << 10
+            | (buf[1] as u16) << 2
+            | (buf[2] as u16) >> 6) as f32;
+
+        let voltage = sign * self.vref * raw / 65535.0;
+
+        Ok(voltage)
+    }
+
+    pub fn read_channel(&mut self, channel: Channel) -> Result<f32, Error<E>> {}
 }
