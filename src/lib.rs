@@ -1,13 +1,9 @@
-use embedded_hal::blocking::{
-    delay::DelayMs,
-    i2c::{Read, Write, WriteRead},
-};
+use embedded_hal::blocking::i2c::{Read, Write, WriteRead};
 
 pub enum Error<E> {
     I2c(E),
     Overvoltage,
     Undervoltage,
-    NotReady,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -96,25 +92,22 @@ fn address_from_pins(ca2: AddressPinState, ca1: AddressPinState, ca0: AddressPin
 }
 
 #[derive(Debug, Default)]
-pub struct LTC2497<I2C, D> {
+pub struct LTC2497<I2C> {
     i2c: I2C,
     address: u8,
-    delay: D,
     channel: Channel,
     vref: f32,
 }
 
-impl<I2C, D, E> LTC2497<I2C, D>
+impl<I2C, E> LTC2497<I2C>
 where
     I2C: Read<Error = E> + Write<Error = E> + WriteRead<Error = E>,
-    D: DelayMs<u8>,
 {
-    pub fn new(i2c: I2C, address: u8, delay: D, vref_p: f32, vref_n: f32) -> Self {
+    pub fn new(i2c: I2C, address: u8, vref_p: f32, vref_n: f32) -> Self {
         assert!(vref_p - vref_n >= 0.1);
         LTC2497 {
             i2c,
             address,
-            delay,
             channel: Channel::default(),
             vref: vref_p - vref_n,
         }
@@ -125,12 +118,11 @@ where
         ca2: AddressPinState,
         ca1: AddressPinState,
         ca0: AddressPinState,
-        delay: D,
         vref_p: f32,
         vref_n: f32,
     ) -> Self {
         let address = address_from_pins(ca2, ca1, ca0);
-        Self::new(i2c, address, delay, vref_p, vref_n)
+        Self::new(i2c, address, vref_p, vref_n)
     }
 
     pub fn set_channel(&mut self, channel: Channel) -> Result<(), E> {
