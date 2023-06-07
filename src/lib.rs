@@ -146,23 +146,51 @@ where
     pub fn read(&mut self) -> Result<f32, Error<E>> {
         let mut buf = [0; 3];
         self.i2c.read(self.address, &mut buf).map_err(Error::I2c)?;
-        let sign;
-        match (buf[0] & 0b11000000) >> 6 {
+        let sign: f32 = match (buf[0] & 0b11000000) >> 6 {
             0b00 => return Err(Error::Undervoltage),
-            0b01 => sign = -0.5,
-            0b10 => sign = 0.5,
+            0b01 => -0.5,
+            0b10 => 0.5,
             0b11 => return Err(Error::Overvoltage),
             _ => unreachable!(),
-        }
+        };
 
-        let raw = (((buf[2] & 0b00111111) as u16) << 10
-            | (buf[1] as u16) << 2
-            | (buf[2] as u16) >> 6) as f32;
+        let adc_code =
+            (((buf[2] as u32) << 16 | (buf[1] as u32) << 8 | buf[0] as u32) & 0x3FFFFF) >> 6;
 
-        let voltage = sign * self.vref * raw / 65535.0;
+        //https://github.com/DuyTrandeLion/peripheral-drivers/blob/fb1dc6f390839b7f8ee52f8b14bd91ad4c8f3555/LTC2497/ltc2497.c#L80
+        //https://github.com/analogdevicesinc/Linduino/blob/bff9185178d2bf694d0fed14a85392f21655c7de/LTSketchbook/libraries/LTC24XX_general/LTC24XX_general.cpp#L389
+        let voltage = if sign.is_sign_positive() {
+            sign * self.vref * ((adc_code & 0xFFFF) as f32) / 65535.0
+        } else {
+            sign * self.vref * ((65536.0 - adc_code as f32) / 65535.0)
+        };
 
         Ok(voltage)
     }
 
-    pub fn read_channel(&mut self, channel: Channel) -> Result<f32, Error<E>> {}
+    pub fn read_channel(&mut self, channel: Channel) -> Result<f32, Error<E>> {
+        let mut buf = [0; 3];
+        self.i2c
+            .write_read(self.address, &[channel as u8], &mut buf)
+            .map_err(Error::I2c)?;
+
+        let sign: f32 = match (buf[0] & 0b11000000) >> 6 {
+            0b00 => return Err(Error::Undervoltage),
+            0b01 => -0.5,
+            0b10 => 0.5,
+            0b11 => return Err(Error::Overvoltage),
+            _ => unreachable!(),
+        };
+
+        let adc_code =
+            (((buf[2] as u32) << 16 | (buf[1] as u32) << 8 | buf[0] as u32) & 0x3FFFFF) >> 6;
+
+        let voltage = if sign.is_sign_positive() {
+            sign * self.vref * ((adc_code & 0x1FFFF) as f32) / 65535.0
+        } else {
+            sign * self.vref * ((65536.0 - adc_code as f32) / 65535.0)
+        };
+
+        Ok(voltage)
+    }
 }
