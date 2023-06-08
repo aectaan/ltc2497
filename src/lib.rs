@@ -1,5 +1,6 @@
 use embedded_hal::blocking::i2c::{Read, Write, WriteRead};
 
+#[derive(Debug)]
 pub enum Error<E> {
     I2c(E),
     Overvoltage,
@@ -26,20 +27,20 @@ pub enum Channel {
     DiffCh13Ch12 = 0b10101110,
     DiffCh15Ch14 = 0b10101111,
     SingleEndedCh0 = 0b10110000,
-    SingleEndedCh1 = 0b10110001,
-    SingleEndedCh2 = 0b10110010,
-    SingleEndedCh3 = 0b10110011,
-    SingleEndedCh4 = 0b10110100,
-    SingleEndedCh5 = 0b10110101,
-    SingleEndedCh6 = 0b10110110,
-    SingleEndedCh7 = 0b10110111,
-    SingleEndedCh8 = 0b10111000,
-    SingleEndedCh9 = 0b10111001,
-    SingleEndedCh10 = 0b10111010,
-    SingleEndedCh11 = 0b10111011,
-    SingleEndedCh12 = 0b10111100,
-    SingleEndedCh13 = 0b10111101,
-    SingleEndedCh14 = 0b10111110,
+    SingleEndedCh1 = 0b10111000,
+    SingleEndedCh2 = 0b10110001,
+    SingleEndedCh3 = 0b10111001,
+    SingleEndedCh4 = 0b10110010,
+    SingleEndedCh5 = 0b10111010,
+    SingleEndedCh6 = 0b10110011,
+    SingleEndedCh7 = 0b10111011,
+    SingleEndedCh8 = 0b10110100,
+    SingleEndedCh9 = 0b10111100,
+    SingleEndedCh10 = 0b10110101,
+    SingleEndedCh11 = 0b10111101,
+    SingleEndedCh12 = 0b10110110,
+    SingleEndedCh13 = 0b10111110,
+    SingleEndedCh14 = 0b10110111,
     SingleEndedCh15 = 0b10111111,
 }
 
@@ -138,6 +139,7 @@ where
     pub fn read(&mut self) -> Result<f32, Error<E>> {
         let mut buf = [0; 3];
         self.i2c.read(self.address, &mut buf).map_err(Error::I2c)?;
+        println!("raw: {buf:02X?}");
         let sign: f32 = match (buf[0] & 0b11000000) >> 6 {
             0b00 => return Err(Error::Undervoltage),
             0b01 => -0.5,
@@ -147,7 +149,7 @@ where
         };
 
         let adc_code =
-            (((buf[2] as u32) << 16 | (buf[1] as u32) << 8 | buf[0] as u32) & 0x3FFFFF) >> 6;
+            (((buf[0] as u32) << 16 | (buf[1] as u32) << 8 | buf[2] as u32) & 0x3FFFFF) >> 6;
 
         //https://github.com/DuyTrandeLion/peripheral-drivers/blob/fb1dc6f390839b7f8ee52f8b14bd91ad4c8f3555/LTC2497/ltc2497.c#L80
         //https://github.com/analogdevicesinc/Linduino/blob/bff9185178d2bf694d0fed14a85392f21655c7de/LTSketchbook/libraries/LTC24XX_general/LTC24XX_general.cpp#L389
@@ -165,6 +167,7 @@ where
         self.i2c
             .write_read(self.address, &[channel as u8], &mut buf)
             .map_err(Error::I2c)?;
+        println!("raw: {buf:02X?} at ch {:02X?}",channel as u8);
 
         let sign: f32 = match (buf[0] & 0b11000000) >> 6 {
             0b00 => return Err(Error::Undervoltage),
@@ -175,7 +178,7 @@ where
         };
 
         let adc_code =
-            (((buf[2] as u32) << 16 | (buf[1] as u32) << 8 | buf[0] as u32) & 0x3FFFFF) >> 6;
+            (((buf[0] as u32) << 16 | (buf[1] as u32) << 8 | buf[2] as u32) & 0x3FFFFF) >> 6;
 
         let voltage = if sign.is_sign_positive() {
             sign * self.vref * ((adc_code & 0x1FFFF) as f32) / 65535.0
