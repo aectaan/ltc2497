@@ -10,38 +10,38 @@ pub enum Error<E> {
 #[derive(Debug, Clone, Copy)]
 pub enum Channel {
     LastSelected = 0b00000000,
-    DiffCh0Ch1 = 0b10100000,
-    DiffCh2Ch3 = 0b10100001,
-    DiffCh4Ch5 = 0b10100010,
-    DiffCh6Ch7 = 0b10100011,
-    DiffCh8Ch9 = 0b10100100,
-    DiffCh10Ch11 = 0b10100101,
-    DiffCh12Ch13 = 0b10100110,
-    DiffCh14Ch15 = 0b10100111,
-    DiffCh1Ch0 = 0b10101000,
-    DiffCh3Ch2 = 0b10101001,
-    DiffCh5Ch4 = 0b10101010,
-    DiffCh7Ch6 = 0b10101011,
-    DiffCh9Ch8 = 0b10101100,
-    DiffCh11Ch10 = 0b10101101,
-    DiffCh13Ch12 = 0b10101110,
-    DiffCh15Ch14 = 0b10101111,
-    SingleEndedCh0 = 0b10110000,
-    SingleEndedCh1 = 0b10111000,
-    SingleEndedCh2 = 0b10110001,
-    SingleEndedCh3 = 0b10111001,
-    SingleEndedCh4 = 0b10110010,
-    SingleEndedCh5 = 0b10111010,
-    SingleEndedCh6 = 0b10110011,
-    SingleEndedCh7 = 0b10111011,
-    SingleEndedCh8 = 0b10110100,
-    SingleEndedCh9 = 0b10111100,
-    SingleEndedCh10 = 0b10110101,
-    SingleEndedCh11 = 0b10111101,
-    SingleEndedCh12 = 0b10110110,
-    SingleEndedCh13 = 0b10111110,
-    SingleEndedCh14 = 0b10110111,
-    SingleEndedCh15 = 0b10111111,
+    DiffCh0Ch1 = 0b101_00_000,
+    DiffCh2Ch3 = 0b101_00_001,
+    DiffCh4Ch5 = 0b101_00_010,
+    DiffCh6Ch7 = 0b101_00_011,
+    DiffCh8Ch9 = 0b101_00_100,
+    DiffCh10Ch11 = 0b101_00_101,
+    DiffCh12Ch13 = 0b101_00_110,
+    DiffCh14Ch15 = 0b101_00_111,
+    DiffCh1Ch0 = 0b101_01_000,
+    DiffCh3Ch2 = 0b101_01_001,
+    DiffCh5Ch4 = 0b101_01_010,
+    DiffCh7Ch6 = 0b101_01_011,
+    DiffCh9Ch8 = 0b101_01_100,
+    DiffCh11Ch10 = 0b101_01_101,
+    DiffCh13Ch12 = 0b101_01_110,
+    DiffCh15Ch14 = 0b101_01_111,
+    SingleEndedCh0 = 0b101_10_000,
+    SingleEndedCh1 = 0b101_11_000,
+    SingleEndedCh2 = 0b101_10_001,
+    SingleEndedCh3 = 0b101_11_001,
+    SingleEndedCh4 = 0b101_10_010,
+    SingleEndedCh5 = 0b101_11_010,
+    SingleEndedCh6 = 0b101_10_011,
+    SingleEndedCh7 = 0b101_11_011,
+    SingleEndedCh8 = 0b101_10_100,
+    SingleEndedCh9 = 0b101_11_100,
+    SingleEndedCh10 = 0b101_10_101,
+    SingleEndedCh11 = 0b101_11_101,
+    SingleEndedCh12 = 0b101_10_110,
+    SingleEndedCh13 = 0b101_11_110,
+    SingleEndedCh14 = 0b101_10_111,
+    SingleEndedCh15 = 0b101_11_111,
 }
 
 impl Default for Channel {
@@ -126,10 +126,12 @@ where
         Self::new(i2c, address, vref_p, vref_n)
     }
 
-    pub fn set_channel(&mut self, channel: Channel) -> Result<(), E> {
+    pub fn set_channel(&mut self, channel: Channel) -> Result<(), Error<E>> {
         self.channel = channel;
 
-        self.i2c.write(self.address, &[channel as u8])
+        self.i2c.write(self.address, &[channel as u8]).map_err(Error::I2c)?;
+
+        Ok(())
     }
 
     pub fn channel(&self) -> Channel {
@@ -163,28 +165,33 @@ where
     }
 
     pub fn read_channel(&mut self, channel: Channel) -> Result<f32, Error<E>> {
-        let mut buf = [0; 3];
-        self.i2c
-            .write_read(self.address, &[channel as u8], &mut buf)
-            .map_err(Error::I2c)?;
-        println!("raw: {buf:02X?} at ch {:02X?}",channel as u8);
+        // let mut buf = [0; 3];
+        // self.i2c
+        //     .write_read(self.address, &[channel as u8], &mut buf)
+        //     .map_err(Error::I2c)?;
+        // println!("raw: {buf:02X?} at ch {:02X?}",channel as u8);
 
-        let sign: f32 = match (buf[0] & 0b11000000) >> 6 {
-            0b00 => return Err(Error::Undervoltage),
-            0b01 => -0.5,
-            0b10 => 0.5,
-            0b11 => return Err(Error::Overvoltage),
-            _ => unreachable!(),
-        };
+        // let sign: f32 = match (buf[0] & 0b11000000) >> 6 {
+        //     0b00 => return Err(Error::Undervoltage),
+        //     0b01 => -0.5,
+        //     0b10 => 0.5,
+        //     0b11 => return Err(Error::Overvoltage),
+        //     _ => unreachable!(),
+        // };
 
-        let adc_code =
-            (((buf[0] as u32) << 16 | (buf[1] as u32) << 8 | buf[2] as u32) & 0x3FFFFF) >> 6;
+        // let adc_code =
+        //     (((buf[0] as u32) << 16 | (buf[1] as u32) << 8 | buf[2] as u32) & 0x3FFFFF) >> 6;
 
-        let voltage = if sign.is_sign_positive() {
-            sign * self.vref * ((adc_code & 0x1FFFF) as f32) / 65535.0
-        } else {
-            sign * self.vref * ((65536.0 - adc_code as f32) / 65535.0)
-        };
+        // let voltage = if sign.is_sign_positive() {
+        //     sign * self.vref * ((adc_code & 0x1FFFF) as f32) / 65535.0
+        // } else {
+        //     sign * self.vref * ((65536.0 - adc_code as f32) / 65535.0)
+        // };
+
+        self.set_channel(channel)?;
+    
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        let voltage = self.read()?;
 
         Ok(voltage)
     }
