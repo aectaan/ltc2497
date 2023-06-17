@@ -1,4 +1,9 @@
-use embedded_hal::blocking::i2c::{Read, Write, WriteRead};
+use embedded_hal::blocking::{
+    delay::DelayMs,
+    i2c::{Read, Write, WriteRead},
+};
+
+const CONVERSION_DELAY: u8 = 150;
 
 #[derive(Debug)]
 pub enum Error<E> {
@@ -42,6 +47,31 @@ pub enum Channel {
     SingleEndedCh13 = 0b101_11_110,
     SingleEndedCh14 = 0b101_10_111,
     SingleEndedCh15 = 0b101_11_111,
+}
+
+impl TryFrom<u8> for Channel {
+    type Error = String;
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::SingleEndedCh0),
+            1 => Ok(Self::SingleEndedCh1),
+            2 => Ok(Self::SingleEndedCh2),
+            3 => Ok(Self::SingleEndedCh3),
+            4 => Ok(Self::SingleEndedCh4),
+            5 => Ok(Self::SingleEndedCh5),
+            6 => Ok(Self::SingleEndedCh6),
+            7 => Ok(Self::SingleEndedCh7),
+            8 => Ok(Self::SingleEndedCh8),
+            9 => Ok(Self::SingleEndedCh9),
+            10 => Ok(Self::SingleEndedCh10),
+            11 => Ok(Self::SingleEndedCh11),
+            12 => Ok(Self::SingleEndedCh12),
+            13 => Ok(Self::SingleEndedCh13),
+            14 => Ok(Self::SingleEndedCh14),
+            15 => Ok(Self::SingleEndedCh15),
+            _ => Err(format!("Channel with index {value} doesn't exist")),
+        }
+    }
 }
 
 impl Default for Channel {
@@ -93,24 +123,27 @@ fn address_from_pins(ca2: AddressPinState, ca1: AddressPinState, ca0: AddressPin
 }
 
 #[derive(Debug, Default)]
-pub struct LTC2497<I2C> {
+pub struct LTC2497<I2C, D> {
     i2c: I2C,
     address: u8,
     channel: Channel,
     vref: f32,
+    delay: D,
 }
 
-impl<I2C, E> LTC2497<I2C>
+impl<I2C, D, E> LTC2497<I2C, D>
 where
     I2C: Read<Error = E> + Write<Error = E> + WriteRead<Error = E>,
+    D: DelayMs<u8>,
 {
-    pub fn new(i2c: I2C, address: u8, vref_p: f32, vref_n: f32) -> Self {
+    pub fn new(i2c: I2C, address: u8, vref_p: f32, vref_n: f32, delay: D) -> Self {
         assert!(vref_p - vref_n >= 0.1);
         LTC2497 {
             i2c,
             address,
             channel: Channel::default(),
             vref: vref_p - vref_n,
+            delay,
         }
     }
 
@@ -121,15 +154,20 @@ where
         ca0: AddressPinState,
         vref_p: f32,
         vref_n: f32,
+        delay: D,
     ) -> Self {
         let address = address_from_pins(ca2, ca1, ca0);
-        Self::new(i2c, address, vref_p, vref_n)
+        Self::new(i2c, address, vref_p, vref_n, delay)
     }
 
     pub fn set_channel(&mut self, channel: Channel) -> Result<(), Error<E>> {
         self.channel = channel;
 
-        self.i2c.write(self.address, &[channel as u8]).map_err(Error::I2c)?;
+        self.delay.delay_ms(CONVERSION_DELAY);
+
+        self.i2c
+            .write(self.address, &[channel as u8])
+            .map_err(Error::I2c)?;
 
         Ok(())
     }
@@ -140,8 +178,10 @@ where
 
     pub fn read(&mut self) -> Result<f32, Error<E>> {
         let mut buf = [0; 3];
+
+        self.delay.delay_ms(CONVERSION_DELAY);
+
         self.i2c.read(self.address, &mut buf).map_err(Error::I2c)?;
-        println!("raw: {buf:02X?}");
         let sign: f32 = match (buf[0] & 0b11000000) >> 6 {
             0b00 => return Err(Error::Undervoltage),
             0b01 => -0.5,
@@ -153,8 +193,6 @@ where
         let adc_code =
             (((buf[0] as u32) << 16 | (buf[1] as u32) << 8 | buf[2] as u32) & 0x3FFFFF) >> 6;
 
-        //https://github.com/DuyTrandeLion/peripheral-drivers/blob/fb1dc6f390839b7f8ee52f8b14bd91ad4c8f3555/LTC2497/ltc2497.c#L80
-        //https://github.com/analogdevicesinc/Linduino/blob/bff9185178d2bf694d0fed14a85392f21655c7de/LTSketchbook/libraries/LTC24XX_general/LTC24XX_general.cpp#L389
         let voltage = if sign.is_sign_positive() {
             sign * self.vref * ((adc_code & 0xFFFF) as f32) / 65535.0
         } else {
@@ -165,32 +203,8 @@ where
     }
 
     pub fn read_channel(&mut self, channel: Channel) -> Result<f32, Error<E>> {
-        // let mut buf = [0; 3];
-        // self.i2c
-        //     .write_read(self.address, &[channel as u8], &mut buf)
-        //     .map_err(Error::I2c)?;
-        // println!("raw: {buf:02X?} at ch {:02X?}",channel as u8);
-
-        // let sign: f32 = match (buf[0] & 0b11000000) >> 6 {
-        //     0b00 => return Err(Error::Undervoltage),
-        //     0b01 => -0.5,
-        //     0b10 => 0.5,
-        //     0b11 => return Err(Error::Overvoltage),
-        //     _ => unreachable!(),
-        // };
-
-        // let adc_code =
-        //     (((buf[0] as u32) << 16 | (buf[1] as u32) << 8 | buf[2] as u32) & 0x3FFFFF) >> 6;
-
-        // let voltage = if sign.is_sign_positive() {
-        //     sign * self.vref * ((adc_code & 0x1FFFF) as f32) / 65535.0
-        // } else {
-        //     sign * self.vref * ((65536.0 - adc_code as f32) / 65535.0)
-        // };
-
         self.set_channel(channel)?;
-    
-        std::thread::sleep(std::time::Duration::from_millis(200));
+
         let voltage = self.read()?;
 
         Ok(voltage)
