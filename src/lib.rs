@@ -1,3 +1,5 @@
+#![no_std]
+
 use embedded_hal::blocking::{
     delay::DelayMs,
     i2c::{Read, Write, WriteRead},
@@ -49,27 +51,26 @@ pub enum Channel {
     SingleEndedCh15 = 0b101_11_111,
 }
 
-impl TryFrom<u8> for Channel {
-    type Error = String;
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
+impl From<u8> for Channel {
+    fn from(value: u8) -> Self {
         match value {
-            0 => Ok(Self::SingleEndedCh0),
-            1 => Ok(Self::SingleEndedCh1),
-            2 => Ok(Self::SingleEndedCh2),
-            3 => Ok(Self::SingleEndedCh3),
-            4 => Ok(Self::SingleEndedCh4),
-            5 => Ok(Self::SingleEndedCh5),
-            6 => Ok(Self::SingleEndedCh6),
-            7 => Ok(Self::SingleEndedCh7),
-            8 => Ok(Self::SingleEndedCh8),
-            9 => Ok(Self::SingleEndedCh9),
-            10 => Ok(Self::SingleEndedCh10),
-            11 => Ok(Self::SingleEndedCh11),
-            12 => Ok(Self::SingleEndedCh12),
-            13 => Ok(Self::SingleEndedCh13),
-            14 => Ok(Self::SingleEndedCh14),
-            15 => Ok(Self::SingleEndedCh15),
-            _ => Err(format!("Channel with index {value} doesn't exist")),
+            0 => Self::SingleEndedCh0,
+            1 => Self::SingleEndedCh1,
+            2 => Self::SingleEndedCh2,
+            3 => Self::SingleEndedCh3,
+            4 => Self::SingleEndedCh4,
+            5 => Self::SingleEndedCh5,
+            6 => Self::SingleEndedCh6,
+            7 => Self::SingleEndedCh7,
+            8 => Self::SingleEndedCh8,
+            9 => Self::SingleEndedCh9,
+            10 => Self::SingleEndedCh10,
+            11 => Self::SingleEndedCh11,
+            12 => Self::SingleEndedCh12,
+            13 => Self::SingleEndedCh13,
+            14 => Self::SingleEndedCh14,
+            15 => Self::SingleEndedCh15,
+            _ => unimplemented!(),
         }
     }
 }

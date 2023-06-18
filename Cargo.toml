@@ -2,6 +2,13 @@
 name = "ltc2497"
 version = "0.1.0"
 edition = "2021"
+authors = ["Egor Markov <mark_ee@live.com>"]
+repository = "https://github.com/aectaan/ltc2497"
+license = "MIT"
+description = "Platform agnostic Rust driver for the Analog Devices LTC2497 ADC"
+readme = "README.md"
+keywords = ["ltc2497","driver","adc","embedded-hal-driver", "i2c"]
+categories = ["embedded", "hardware-support", "no-std"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -11,3 +18,6 @@ embedded-hal = "0.2.7"
 [dev-dependencies]
 rppal = { version = "0.14.1", features = ["hal"] }
 linux-embedded-hal = "0.3.2"
+
+[profile.release]
+lto = true
