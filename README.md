@@ -1,9 +1,5 @@
 # LTC2497 Rust Driver
 
-[![GitHub Actions][github-actions-badge]][github-actions]
-[![Crates.io Version][crates-io-badge]][crates-io]
-[![Crates.io Downloads][crates-io-download-badge]][crates-io-download]
-
 This is a platform agnostic driver for the Analog Devices LTC2497 16-Bit 8-/16-Channel DSADC with I2C Interface.
 
 ## Device

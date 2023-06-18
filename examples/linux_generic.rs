@@ -10,7 +10,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut adc = LTC2497::new_from_pins(i2c, Low, Low, Low, 5.0, 0.0, Delay);
 
     for ch in 0..=15 {
-        match adc.read_channel(Channel::try_from(ch).unwrap()) {
+        match adc.read_channel(Channel::from(ch)) {
             Ok(v) => println!("Channel {ch}: {v}V"),
             Err(e) => println!("error {e:?} at channel {ch}"),
         };

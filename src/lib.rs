@@ -1,3 +1,40 @@
+//! A platform agnostic Rust driver for the LTC2497 ADC, based on the [`embedded-hal`](https://github.com/rust-embedded/embedded-hal) traits.
+//! Device can be used with embedded HAL directly or with RPPAL (Raspberry Pi Peripheral Access Library) with "hal" feature.
+//!
+//! ## Usage
+//!
+//! Import this crate and one of embedded HAL implementation (e.g. [linux-embedded-hal](https://crates.io/crates/linux-embedded-hal)
+//! or [rppal](https://crates.io/crates/rppal)). Then instantiate the device.
+//!
+//! ```no_run
+//! use std::error::Error;
+//! use ltc2497::LTC2497;
+//! use ltc2497::{AddressPinState::Low, Channel};
+//! use rppal::hal::Delay;
+//! use rppal::i2c::I2c;
+//!
+//! # fn main() -> Result<(), Box<dyn Error>> {
+//! let i2c = I2c::new()?;
+//!
+//! let mut adc = LTC2497::new_from_pins(i2c, Low, Low, Low, 5.0, 0.0, Delay);
+//!
+//! for ch in 0..=15 {
+//!     match adc.read_channel(Channel::from(ch)) {
+//!         Ok(v) => println!("Channel {ch}: {v}V"),
+//!         Err(e) => println!("error {e:?} at channel {ch}"),
+//!     };
+//! }
+//!
+//! Ok(())
+//! # }
+//! ```
+//!
+//! Also you can instantiate device with address directly. For example, if you configured pins to set device address 0x20:
+//! ```no_run
+//! let mut adc = LTC2497::new(i2c, 0x20, 5.0, 0.0, Delay);
+//! ```
+//!
+
 #![no_std]
 
 use embedded_hal::blocking::{
@@ -5,52 +42,67 @@ use embedded_hal::blocking::{
     i2c::{Read, Write, WriteRead},
 };
 
-const CONVERSION_DELAY: u8 = 150;
+/// Maximum conversion duration by datasheet is claimed as 149.9ms. This delay is used to prevent I2C NACKs caused by trying to access registers during conversion.
+const CONVERSION_DELAY: u8 = 160;
 
 #[derive(Debug)]
 pub enum Error<E> {
+    /// I2C bus error
     I2c(E),
+    /// Voltage is too high
     Overvoltage,
+    /// Voltage is too low
     Undervoltage,
 }
 
+/// LTC2497 provides a possibility to make differential measurements between two adjacent channels. You can get voltage between channel 0 and channel 1,
+/// between channel 2 and channel 3, but you can't measure voltage between channel 1 and channel 2 or between channel 4 and channel 8, because they belongs to different pairs.
+/// Also you can make single-ended measurements (between any channel and GND).
 #[derive(Debug, Clone, Copy)]
 pub enum Channel {
-    LastSelected = 0b00000000,
-    DiffCh0Ch1 = 0b101_00_000,
-    DiffCh2Ch3 = 0b101_00_001,
-    DiffCh4Ch5 = 0b101_00_010,
-    DiffCh6Ch7 = 0b101_00_011,
-    DiffCh8Ch9 = 0b101_00_100,
-    DiffCh10Ch11 = 0b101_00_101,
-    DiffCh12Ch13 = 0b101_00_110,
-    DiffCh14Ch15 = 0b101_00_111,
-    DiffCh1Ch0 = 0b101_01_000,
-    DiffCh3Ch2 = 0b101_01_001,
-    DiffCh5Ch4 = 0b101_01_010,
-    DiffCh7Ch6 = 0b101_01_011,
-    DiffCh9Ch8 = 0b101_01_100,
-    DiffCh11Ch10 = 0b101_01_101,
-    DiffCh13Ch12 = 0b101_01_110,
-    DiffCh15Ch14 = 0b101_01_111,
-    SingleEndedCh0 = 0b101_10_000,
-    SingleEndedCh1 = 0b101_11_000,
-    SingleEndedCh2 = 0b101_10_001,
-    SingleEndedCh3 = 0b101_11_001,
-    SingleEndedCh4 = 0b101_10_010,
-    SingleEndedCh5 = 0b101_11_010,
-    SingleEndedCh6 = 0b101_10_011,
-    SingleEndedCh7 = 0b101_11_011,
-    SingleEndedCh8 = 0b101_10_100,
-    SingleEndedCh9 = 0b101_11_100,
-    SingleEndedCh10 = 0b101_10_101,
-    SingleEndedCh11 = 0b101_11_101,
-    SingleEndedCh12 = 0b101_10_110,
-    SingleEndedCh13 = 0b101_11_110,
-    SingleEndedCh14 = 0b101_10_111,
-    SingleEndedCh15 = 0b101_11_111,
+    DiffCh0Ch1 = 0b10100000,
+    DiffCh2Ch3 = 0b10100001,
+    DiffCh4Ch5 = 0b10100010,
+    DiffCh6Ch7 = 0b10100011,
+    DiffCh8Ch9 = 0b10100100,
+    DiffCh10Ch11 = 0b10100101,
+    DiffCh12Ch13 = 0b10100110,
+    DiffCh14Ch15 = 0b10100111,
+    DiffCh1Ch0 = 0b10101000,
+    DiffCh3Ch2 = 0b10101001,
+    DiffCh5Ch4 = 0b10101010,
+    DiffCh7Ch6 = 0b10101011,
+    DiffCh9Ch8 = 0b10101100,
+    DiffCh11Ch10 = 0b10101101,
+    DiffCh13Ch12 = 0b10101110,
+    DiffCh15Ch14 = 0b10101111,
+    SingleEndedCh0 = 0b10110000,
+    SingleEndedCh1 = 0b10111000,
+    SingleEndedCh2 = 0b10110001,
+    SingleEndedCh3 = 0b10111001,
+    SingleEndedCh4 = 0b10110010,
+    SingleEndedCh5 = 0b10111010,
+    SingleEndedCh6 = 0b10110011,
+    SingleEndedCh7 = 0b10111011,
+    SingleEndedCh8 = 0b10110100,
+    SingleEndedCh9 = 0b10111100,
+    SingleEndedCh10 = 0b10110101,
+    SingleEndedCh11 = 0b10111101,
+    SingleEndedCh12 = 0b10110110,
+    SingleEndedCh13 = 0b10111110,
+    SingleEndedCh14 = 0b10110111,
+    SingleEndedCh15 = 0b10111111,
 }
 
+/// Small cheat for easier iteration over all single-ended channels
+/// ```no_run
+/// for ch in 0..=15 {
+///     match adc.read_channel(Channel::from(ch)) {
+///         Ok(v) => println!("Channel {ch}: {v}V"),
+///         Err(e) => println!("error {e:?} at channel {ch}"),
+///     };
+/// }
+/// ```
 impl From<u8> for Channel {
     fn from(value: u8) -> Self {
         match value {
@@ -75,12 +127,14 @@ impl From<u8> for Channel {
     }
 }
 
+/// At startup LTC2497 configured for differential ch0-ch1 measurements.
 impl Default for Channel {
     fn default() -> Self {
         Self::DiffCh0Ch1
     }
 }
 
+/// Address pins haven't any pull-ups/pull-downs and are tri-state by nature. So address is configured by these states.
 #[derive(Debug)]
 pub enum AddressPinState {
     Low,
@@ -88,6 +142,7 @@ pub enum AddressPinState {
     Floating,
 }
 
+/// Simple lookup table for easier initialization
 fn address_from_pins(ca2: AddressPinState, ca1: AddressPinState, ca0: AddressPinState) -> u8 {
     use AddressPinState::Floating as F;
     use AddressPinState::High as H;
@@ -123,6 +178,7 @@ fn address_from_pins(ca2: AddressPinState, ca1: AddressPinState, ca0: AddressPin
     }
 }
 
+/// Driver for the LTC2497 ADC
 #[derive(Debug, Default)]
 pub struct LTC2497<I2C, D> {
     i2c: I2C,
@@ -137,6 +193,8 @@ where
     I2C: Read<Error = E> + Write<Error = E> + WriteRead<Error = E>,
     D: DelayMs<u8>,
 {
+    /// Initialize the driver by providing exact address.
+    /// This constructor has no side effects and writes nothing to device.
     pub fn new(i2c: I2C, address: u8, vref_p: f32, vref_n: f32, delay: D) -> Self {
         assert!(vref_p - vref_n >= 0.1);
         LTC2497 {
@@ -148,6 +206,8 @@ where
         }
     }
 
+    /// Initialize the driver by providing address pins states.
+    /// This constructor has no side effects and writes nothing to device.
     pub fn new_from_pins(
         i2c: I2C,
         ca2: AddressPinState,
@@ -161,6 +221,7 @@ where
         Self::new(i2c, address, vref_p, vref_n, delay)
     }
 
+    /// Changes current measurement channel.
     pub fn set_channel(&mut self, channel: Channel) -> Result<(), Error<E>> {
         self.channel = channel;
 
@@ -173,10 +234,13 @@ where
         Ok(())
     }
 
+    /// Returns active measurement channel.
     pub fn channel(&self) -> Channel {
         self.channel
     }
 
+    /// Returns measurement result for selected channel.
+    /// Triggers new measurement sequence after successful read.
     pub fn read(&mut self) -> Result<f32, Error<E>> {
         let mut buf = [0; 3];
 
@@ -203,6 +267,7 @@ where
         Ok(voltage)
     }
 
+    /// Select new channel and return measurement result.
     pub fn read_channel(&mut self, channel: Channel) -> Result<f32, Error<E>> {
         self.set_channel(channel)?;
 
